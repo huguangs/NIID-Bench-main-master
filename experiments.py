@@ -903,10 +903,9 @@ if __name__ == '__main__':
                 net.load_state_dict(global_para)
 
         flag = True
-        df = pd.DataFrame(columns=['round', 'train_acc'])
+        df = pd.DataFrame(columns=['round', 'global_loss'])
         for round in range(args.comm_round):
             logger.info("in comm round:" + str(round))
-
             arr = np.arange(args.n_parties)
             np.random.shuffle(arr)
             selected = arr[:int(args.n_parties * args.sample)]
@@ -925,7 +924,6 @@ if __name__ == '__main__':
             flag = False
             # local_train_net(nets, selected, args, net_dataidx_map,device,test_dl = test_dl_global)
             # local_train_net(nets, args, net_dataidx_map, local_split=False, device=device)
-
             # update global model
             total_data_points = sum([len(net_dataidx_map_old[r]) for r in selected])
             fed_avg_freqs = [len(net_dataidx_map_old[r]) / total_data_points for r in selected]
@@ -965,12 +963,12 @@ if __name__ == '__main__':
                     epoch_loss_collector.append(loss.item())
             global_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
             print("global_loss = %d", global_loss)
-            # df.loc[len(df)] = [round, global_loss]
+            df.loc[len(df)] = [round, global_loss]
             logger.info('global n_training: %d' % len(train_dl_global))
             logger.info('global n_test: %d' % len(test_dl_global))
             global_model.to(device)
             train_acc = compute_accuracy(global_model, train_dl_global, device)
-            df.loc[len(df)] = [round, train_acc]
+            #df.loc[len(df)] = [round, train_acc]
             test_acc = compute_accuracy(global_model, test_dl_global,device, get_confusion_matrix=True)
 
             logger.info('>> Global Model Train accuracy: %f' % train_acc)
