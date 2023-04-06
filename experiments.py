@@ -150,7 +150,7 @@ def init_nets(net_configs, dropout_p, n_parties, args):
     return nets, model_meta_data, layer_type
 
 
-def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device, flag,chooseCompress):
+def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device, flag, chooseCompress=True):
     old_net = copy.deepcopy(net)
     logger.info('Training network %s' % str(net_id))
 
@@ -178,7 +178,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
     #writer = SummaryWriter()
 
     # for epoch in range(epochs):
-    #     epoch_loss_collector = []
+    epoch_loss_collector = []
 
     for tmp in train_dataloader:
         for batch_idx, (x, target) in enumerate(tmp):
@@ -208,8 +208,9 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     grad[torch.abs(grad) < threshold] = 0
             # 使用压缩后的梯度进行优化
             optimizer.step()
-
-    print('Epoch: %d Loss: %f' % (1, loss.item()))
+            epoch_loss_collector.append(loss.item())
+        epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
+    print('Epoch: %d Loss: %f' % (1, epoch_loss))
                 # cnt += 1
         #         epoch_loss_collector.append(loss.item())
         # epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
@@ -286,8 +287,6 @@ def train_net_fedprox(net_id, net, global_net, train_dataloader, test_dataloader
             for param_index, param in enumerate(net.parameters()):
                 fed_prox_reg += ((mu / 2) * torch.norm((param - global_weight_collector[param_index]))**2)
             loss += fed_prox_reg
-
-
             loss.backward()
             optimizer.step()
 
@@ -603,7 +602,7 @@ def local_train_net(nets, selected, args, net_dataidx_map, device,flag, test_dl 
         train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32)
         n_epoch = args.epochs
 
-        relv = train_net(net_id, net, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device, flag)
+        relv = train_net(net_id, net, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device, flag, True)
         if relv == False:
             net_dataidx_map[net_id] = 0  # 只是为了在全局聚合的时候丢掉该不相关梯度的一种方式
 
@@ -940,35 +939,35 @@ if __name__ == '__main__':
                     for key in net_para:
                         global_para[key] += net_para[key] * fed_avg_freqs[idx]
             global_model.load_state_dict(global_para)
-            # cnt = 0
-            # criterion = nn.CrossEntropyLoss().to(device)
-            # optimizer = optim.SGD(filter(lambda p: p.requires_grad, global_model.parameters()), args.lr,
-            #                       momentum=args.rho,
-            #                       weight_decay=args.reg)
-            # if type(train_dl_global) == type([1]):
-            #     pass
-            # else:
-            #     train_dl_global = [train_dl_global]
-            # epoch_loss_collector = []
-            # for tmp in train_dl_global:
-            #     for batch_idx, (x, target) in enumerate(tmp):
-            #         x, target = x.to('cpu'), target.to('cpu')
-            #         optimizer.zero_grad()
-            #         x.requires_grad = False
-            #         target.requires_grad = False
-            #         target = target.long()
-            #         out = global_model(x)
-            #         loss = criterion(out, target)
-            #         # loss.backward()
-            #         # optimizer.step()
-            #         #  梯度相关性修改
-            #         cnt += 1
-            #         epoch_loss_collector.append(loss.item())
-            # global_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
+            cnt = 0
+            criterion = nn.CrossEntropyLoss().to(device)
+            optimizer = optim.SGD(filter(lambda p: p.requires_grad, global_model.parameters()), args.lr,
+                                  momentum=args.rho,
+                                  weight_decay=args.reg)
+            if type(train_dl_global) == type([1]):
+                pass
+            else:
+                train_dl_global = [train_dl_global]
+            epoch_loss_collector = []
+            for tmp in train_dl_global:
+                for batch_idx, (x, target) in enumerate(tmp):
+                    x, target = x.to('cpu'), target.to('cpu')
+                    optimizer.zero_grad()
+                    x.requires_grad = False
+                    target.requires_grad = False
+                    target = target.long()
+                    out = global_model(x)
+                    loss = criterion(out, target)
+                    # loss.backward()
+                    # optimizer.step()
+                    #  梯度相关性修改
+                    cnt += 1
+                    epoch_loss_collector.append(loss.item())
+            global_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
+            print("global_loss = %d", global_loss)
             # df.loc[len(df)] = [round, global_loss]
             logger.info('global n_training: %d' % len(train_dl_global))
             logger.info('global n_test: %d' % len(test_dl_global))
-
             global_model.to(device)
             train_acc = compute_accuracy(global_model, train_dl_global, device)
             df.loc[len(df)] = [round, train_acc]
